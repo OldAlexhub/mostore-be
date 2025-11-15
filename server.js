@@ -19,7 +19,13 @@ const isProd = process.env.NODE_ENV === 'production';
 if (isProd) app.set('trust proxy', 1);
 
 // Allow cross-origin requests from the client dev server(s) and enable cookies
-const defaultOrigins = ['http://localhost:3000', 'http://localhost:3002'];
+// Include deployed frontend origins by default so Render deployments are allowed.
+const defaultOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'https://mostore.onrender.com',
+    'https://mostore-admin.onrender.com'
+];
 const clientOrigin = process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : defaultOrigins;
 app.use(cors({
     origin: function(origin, callback){
