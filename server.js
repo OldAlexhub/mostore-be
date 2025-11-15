@@ -41,7 +41,6 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-import csrfMiddleware from './middleware/csrf.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.join(__dirname, './public');
@@ -55,8 +54,6 @@ app.use(express.static(publicDirectory, {
 }));
 
 // Register API routes
-// Apply CSRF middleware for state-changing requests (double-submit). It will skip when no csrf cookie present.
-app.use('/api', csrfMiddleware);
 app.use('/api', apiRouter);
 
 

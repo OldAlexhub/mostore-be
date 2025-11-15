@@ -24,8 +24,6 @@ export const createUser = async (req, res) => {
     // set refreshToken httpOnly cookie
     res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
     // set non-httpOnly csrf cookie (double-submit) so client JS can read it
-    const csrf = crypto.randomBytes(16).toString('hex');
-    res.cookie('csrf', csrf, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
     res.status(201).json({ user: out, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -46,8 +44,6 @@ export const userLogin = async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
     res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
-    const csrf = crypto.randomBytes(16).toString('hex');
-    res.cookie('csrf', csrf, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
     res.json({ token, user: { id: user._id, username: user.username } });
   } catch (err) {
     res.status(500).json({ error: err.message });

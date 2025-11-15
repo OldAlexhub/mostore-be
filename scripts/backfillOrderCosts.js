@@ -10,7 +10,7 @@ const MONGO = process.env.MONGO_URI || process.env.MONGO || 'mongodb://localhost
 
 async function backfill(dryRun = true) {
   console.log('Connecting to', MONGO);
-  await mongoose.connect(MONGO, { keepAlive: true });
+  await mongoose.connect(MONGO);
   try {
     const cursor = OrderModel.find().cursor();
     let updated = 0, scanned = 0;

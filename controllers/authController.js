@@ -23,7 +23,7 @@ export const logout = async (req, res) => {
     }
     res.clearCookie('token', { httpOnly: true, sameSite: 'lax' });
     res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'lax' });
-    res.clearCookie('csrf', { sameSite: 'lax' });
+    // previously cleared csrf cookie here — CSRF removed
     res.json({ message: 'Logged out' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -58,8 +58,7 @@ export const refresh = async (req, res) => {
 
     res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
     res.cookie('refreshToken', newRefresh, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
-    const csrf = crypto.randomBytes(16).toString('hex');
-    res.cookie('csrf', csrf, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
+    // CSRF cookie generation removed — clients no longer receive or need a csrf cookie
 
     if (isAdmin) {
       res.json({ token, user: { id: user._id, username: user.username, role: user.role } });
@@ -72,12 +71,6 @@ export const refresh = async (req, res) => {
 };
 
 export const getCsrf = async (req, res) => {
-  try {
-    const csrf = crypto.randomBytes(16).toString('hex');
-    // set a non-httpOnly csrf cookie so single-page apps can read it and send in header
-    res.cookie('csrf', csrf, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
-    res.json({ csrf });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  // CSRF endpoint removed — clients should rely on cookie-based auth and CORS protections
+  res.status(404).json({ error: 'Not found' });
 };

@@ -45,9 +45,7 @@ export const adminLogin = async (req, res) => {
     await admin.save();
     res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
 
-    // set non-httpOnly csrf cookie for double-submit
-    const csrf = crypto.randomBytes(16).toString('hex');
-    res.cookie('csrf', csrf, { httpOnly: false, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
+    // CSRF removed: no non-httpOnly csrf cookie is set
 
     res.json({ token, admin: { id: admin._id, username: admin.username, role: admin.role } });
   } catch (err) {

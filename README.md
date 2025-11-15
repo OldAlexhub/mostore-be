@@ -7,7 +7,7 @@ Contents
 - `routes/` — Express routers for resources (orders, products, promotions, users, admins, etc.)
 - `controllers/` — request handlers and business logic
 - `models/` — Mongoose schemas
-- `middleware/` — auth, CSRF double-submit, and other helpers
+- `middleware/` — auth and other helpers
 
 Quick start
 
@@ -33,7 +33,6 @@ npm run dev    # or `node server.js` depending on scripts
 
 Security and Auth
 - Cookie-based auth: the server uses an httpOnly cookie named `token` for JWTs and a rotating refresh token cookie flow for silently renewing sessions.
-- CSRF double-submit: a non-httpOnly cookie named `csrf` is used together with the `X-CSRF-Token` request header for state-changing requests. The CSRF middleware is mounted at `/api` and protects mutating endpoints.
 
 Environment variables
 - `PORT` — port to run the server on (default 3000)
@@ -43,9 +42,8 @@ Environment variables
 - `NODE_ENV` — `development` or `production`
 
 Key endpoints (API root: `/api`)
-- `POST /api/auth/login` — login (returns token cookie + csrf cookie)
+- `POST /api/auth/login` — login (returns token cookie)
 - `POST /api/auth/refresh` — rotate refresh token & receive a new JWT (cookie-aware)
-- `GET /api/auth/csrf` — lightweight endpoint to obtain or refresh the CSRF cookie (client should call before mutating requests)
 
 - `GET /api/products` — list products
 - `GET /api/products/:id` — product details
@@ -70,9 +68,7 @@ Models & behavior notes
 - Orders store coupon metadata: `coupon` (code/type/value), `originalTotalPrice`, and `discountAmount`. When creating an order the server re-validates any provided `couponCode` using the promotions collection.
 - Promotions have fields: `code`, `type` (`percent` or `amount`), `value`, `active`, `startsAt`, `endsAt`, `usageLimit`, `usedCount`.
 
-CSRF usage (client)
-1. Before making a mutating request (POST/PUT/DELETE), the client should ensure the CSRF cookie is present by calling `GET /api/auth/csrf` or by reading the `csrf` cookie set on login.
-2. For mutating requests, include header `X-CSRF-Token: <csrf cookie value>` and send cookies (client must use credentials).
+Note: CSRF double-submit was removed; the API no longer issues a non-httpOnly `csrf` cookie nor requires the `X-CSRF-Token` header. Clients should rely on cookie-based authentication and standard CORS protections.
 
 Examples
 
@@ -94,7 +90,7 @@ Create an order with coupon from the client (example JSON payload):
 ```
 
 Troubleshooting
-- Missing CSRF cookie: ensure the client called `/api/auth/csrf` or logged in and that cookies are enabled and allowed for the origin. The CSRF middleware will return `403: Missing CSRF cookie` if absent.
+- CORS errors: set `CLIENT_ORIGIN` in `.env` to include the client origin (e.g., `http://localhost:3000`). The server uses credentials-enabled CORS and will reject unknown origins.
 - CORS errors: set `CLIENT_ORIGIN` in `.env` to include the client origin (e.g., `http://localhost:3000`). The server uses credentials-enabled CORS and will reject unknown origins.
 
 Development tips
