@@ -54,10 +54,12 @@ export const refresh = async (req, res) => {
     await user.save();
 
     const payload = isAdmin ? { id: user._id, username: user.username, role: user.role } : { id: user._id, username: user.username };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '8h' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
 
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
-    res.cookie('refreshToken', newRefresh, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
+    // set token cookie for 24 hours
+    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    // keep refresh token valid for 24 hours to align with session lifetime
+    res.cookie('refreshToken', newRefresh, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
     // CSRF cookie generation removed — clients no longer receive or need a csrf cookie
 
     if (isAdmin) {

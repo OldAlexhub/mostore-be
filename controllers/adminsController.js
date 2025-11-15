@@ -34,16 +34,17 @@ export const adminLogin = async (req, res) => {
     const match = await bcrypt.compare(password, admin.password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
     const payload = { id: admin._id, username: admin.username, role: admin.role };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '8h' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
 
-    // set httpOnly token cookie
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
+    // set httpOnly token cookie (24 hours)
+    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
 
     // rotate/create refresh token and save on admin
     const refreshToken = crypto.randomBytes(32).toString('hex');
     admin.refreshToken = refreshToken;
     await admin.save();
-    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
+    // keep refresh token valid for 24 hours to match session persistence
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
 
     // CSRF removed: no non-httpOnly csrf cookie is set
 

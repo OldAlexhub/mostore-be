@@ -14,16 +14,15 @@ export const createUser = async (req, res) => {
     const out = user.toObject();
     delete out.password;
     const payload = { id: user._id, username: user.username };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '8h' });
-    // set httpOnly token cookie
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
+    // set httpOnly token cookie (24 hours)
+    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
     // create and save refresh token (rotation)
     const refreshToken = crypto.randomBytes(32).toString('hex');
     user.refreshToken = refreshToken;
     await user.save();
-    // set refreshToken httpOnly cookie
-    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
-    // set non-httpOnly csrf cookie (double-submit) so client JS can read it
+    // set refreshToken httpOnly cookie (24 hours)
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
     res.status(201).json({ user: out, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -38,12 +37,13 @@ export const userLogin = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Invalid credentials' });
     const payload = { id: user._id, username: user.username };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '8h' });
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 8 });
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
+    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
     const refreshToken = crypto.randomBytes(32).toString('hex');
     user.refreshToken = refreshToken;
     await user.save();
-    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 * 7 });
+    // keep refresh token valid for 24 hours to match session persistence
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
     res.json({ token, user: { id: user._id, username: user.username } });
   } catch (err) {
     res.status(500).json({ error: err.message });
