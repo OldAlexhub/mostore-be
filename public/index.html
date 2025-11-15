@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>M&O Store</title>
+	<meta http-equiv="Cache-control" content="public, max-age=60">
+	<style>
+		html,body{height:100%}
+		body{margin:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,Roboto,Arial;background:#f6f8fb}
+		#wrap{display:flex;align-items:center;gap:12px}
+		#dot{width:14px;height:14px;border-radius:50%;background:#f59e0b;transition:background .18s}
+		#time{font-size:12px;color:#667085;min-width:42px;text-align:left}
+		button{background:transparent;border:0;padding:6px;margin:0;cursor:pointer}
+		button svg{display:block}
+	</style>
+</head>
+<body>
+	<div id="wrap" aria-live="polite">
+		<div id="dot" aria-hidden="true"></div>
+		<div id="time" aria-hidden="true">—</div>
+		<button id="refresh" aria-label="Refresh status" title="Refresh status">
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+				<path d="M21 12a9 9 0 10-3.25 6.75" stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+				<path d="M21 3v6h-6" stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+			</svg>
+		</button>
+	</div>
+
+	<script>
+		(function(){
+			const dot = document.getElementById('dot');
+			const time = document.getElementById('time');
+			const refresh = document.getElementById('refresh');
+			const API = '/api/health'; // use dedicated health endpoint
+			const TIMEOUT = 2000;
+
+			async function check(){
+				dot.style.background = '#f59e0b';
+				time.textContent = '';
+				const ac = new AbortController();
+				const id = setTimeout(()=>ac.abort(), TIMEOUT);
+				const start = Date.now();
+				try{
+					const res = await fetch(API, { method: 'GET', signal: ac.signal, cache: 'no-cache' });
+					clearTimeout(id);
+					if(res.ok){ dot.style.background = '#16a34a'; }
+					else { dot.style.background = '#ef4444'; }
+					time.textContent = new Date().toLocaleTimeString();
+				}catch(e){
+					clearTimeout(id);
+					dot.style.background = '#ef4444';
+					time.textContent = new Date().toLocaleTimeString();
+				}
+			}
+
+			refresh.addEventListener('click', check, { passive: true });
+			if(navigator.onLine === false){ dot.style.background = '#ef4444'; time.textContent = 'offline'; }
+			else check();
+		})();
+	</script>
+</body>
+</html>
+</script></body></html>
