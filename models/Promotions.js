@@ -12,7 +12,5 @@ const promoSchema = new mongoose.Schema({
   usedCount: { type: Number, default: 0 }
 }, { timestamps: true });
 
-promoSchema.index({ code: 1 });
-
 const PromotionModel = mongoose.model('Promotions', promoSchema);
 export default PromotionModel;
