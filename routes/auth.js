@@ -5,7 +5,9 @@ import { requireAuth } from '../middleware/auth.js';
 const router = express.Router();
 
 router.get('/me', requireAuth, me);
-router.post('/logout', requireAuth, logout);
+// Allow logout without requiring a valid token so clients can clear session cookies
+// even when the token is missing or expired.
+router.post('/logout', logout);
 router.post('/refresh', refresh);
 
 export default router;

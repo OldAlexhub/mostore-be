@@ -36,15 +36,18 @@ export const adminLogin = async (req, res) => {
     const payload = { id: admin._id, username: admin.username, role: admin.role };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
 
+    // cookie options: allow cross-site cookies in production
+    const cookieSameSite = process.env.NODE_ENV === 'production' ? 'none' : 'lax';
+    const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite, path: '/', maxAge: 1000 * 60 * 60 * 24 };
     // set httpOnly token cookie (24 hours)
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    res.cookie('token', token, cookieOpts);
 
     // rotate/create refresh token and save on admin
     const refreshToken = crypto.randomBytes(32).toString('hex');
     admin.refreshToken = refreshToken;
     await admin.save();
     // keep refresh token valid for 24 hours to match session persistence
-    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    res.cookie('refreshToken', refreshToken, cookieOpts);
 
     // CSRF removed: no non-httpOnly csrf cookie is set
 

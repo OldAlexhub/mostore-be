@@ -21,8 +21,10 @@ export const logout = async (req, res) => {
     if (refresh) {
       await UserModel.findOneAndUpdate({ refreshToken: refresh }, { $unset: { refreshToken: 1 } });
     }
-    res.clearCookie('token', { httpOnly: true, sameSite: 'lax' });
-    res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'lax' });
+    const cookieSameSite = process.env.NODE_ENV === 'production' ? 'none' : 'lax';
+    const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite, path: '/' };
+    res.clearCookie('token', cookieOpts);
+    res.clearCookie('refreshToken', cookieOpts);
     // previously cleared csrf cookie here — CSRF removed
     res.json({ message: 'Logged out' });
   } catch (err) {
@@ -56,10 +58,12 @@ export const refresh = async (req, res) => {
     const payload = isAdmin ? { id: user._id, username: user.username, role: user.role } : { id: user._id, username: user.username };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
 
-    // set token cookie for 24 hours
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
-    // keep refresh token valid for 24 hours to align with session lifetime
-    res.cookie('refreshToken', newRefresh, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    // set cookie options: in production allow cross-site cookies (SameSite=None) and require secure
+    const cookieSameSite = process.env.NODE_ENV === 'production' ? 'none' : 'lax';
+    const cookieOptions = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite, path: '/', maxAge: 1000 * 60 * 60 * 24 };
+    // set token and refreshToken cookies (24 hours)
+    res.cookie('token', token, cookieOptions);
+    res.cookie('refreshToken', newRefresh, cookieOptions);
     // CSRF cookie generation removed — clients no longer receive or need a csrf cookie
 
     if (isAdmin) {

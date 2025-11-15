@@ -15,14 +15,17 @@ export const createUser = async (req, res) => {
     delete out.password;
     const payload = { id: user._id, username: user.username };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '24h' });
+    // cookie options: allow cross-site cookies in production
+    const cookieSameSite = process.env.NODE_ENV === 'production' ? 'none' : 'lax';
+    const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookieSameSite, path: '/', maxAge: 1000 * 60 * 60 * 24 };
     // set httpOnly token cookie (24 hours)
-    res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    res.cookie('token', token, cookieOpts);
     // create and save refresh token (rotation)
     const refreshToken = crypto.randomBytes(32).toString('hex');
     user.refreshToken = refreshToken;
     await user.save();
     // set refreshToken httpOnly cookie (24 hours)
-    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 1000 * 60 * 60 * 24 });
+    res.cookie('refreshToken', refreshToken, cookieOpts);
     res.status(201).json({ user: out, token });
   } catch (err) {
     res.status(400).json({ error: err.message });
