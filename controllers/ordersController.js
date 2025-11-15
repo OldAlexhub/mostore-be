@@ -28,6 +28,7 @@ export const createOrder = async (req, res) => {
           Number: prod.Number,
           Name: prod.Name,
           Sell: prod.Sell,
+          Cost: prod.cost || 0,
           Category: prod.Category,
           Subcategory: prod.Subcategory,
           Material: prod.Material,

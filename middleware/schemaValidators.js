@@ -18,6 +18,13 @@ const productSchema = Joi.object({
   Name: Joi.string().required(),
   QTY: Joi.number().min(0).required(),
   Sell: Joi.number().min(0).required(),
+  // cost per unit for accounting
+  cost: Joi.number().min(0).optional(),
+  // minimum desired quantity to trigger low-stock alerts
+  minQty: Joi.number().min(0).optional(),
+  // optional extra fields used by the admin UI
+  imageUrl: Joi.string().uri().optional(),
+  Description: Joi.string().optional(),
   Category: Joi.string().optional(),
   Subcategory: Joi.string().optional(),
   Material: Joi.string().optional(),

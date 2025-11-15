@@ -11,7 +11,7 @@ router.get('/filters', productsCtrl.getFilters);
 router.get('/search', productsCtrl.searchProducts);
 router.get('/hidden-gems', productsCtrl.getHiddenGems);
 router.get('/:id', productsCtrl.getProductById);
-router.put('/:id', requireAuth, requireRole('manager'), productsCtrl.updateProduct);
+router.put('/:id', requireAuth, requireRole('manager'), validateProduct, productsCtrl.updateProduct);
 router.delete('/:id', requireAuth, requireRole('superadmin'), productsCtrl.deleteProduct);
 
 export default router;

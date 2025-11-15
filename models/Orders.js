@@ -23,6 +23,7 @@ const orderSchema = new mongoose.Schema({
 				Number: { type: Number, required: true },
 				Name: { type: String, required: true },
 				Sell: { type: Number, required: true },
+				Cost: { type: Number, required: false, default: 0 },
 				Category: { type: String },
 				Subcategory: { type: String },
 				Material: { type: String },
