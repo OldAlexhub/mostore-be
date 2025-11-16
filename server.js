@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import fs from 'fs';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -52,6 +53,26 @@ app.use(express.static(publicDirectory, {
         }
     }
 }));
+
+// Serve sitemap.xml preferentially from client build/public locations when available
+app.get('/sitemap.xml', (req, res) => {
+    const clientPublic = path.join(__dirname, '..', 'client', 'public', 'sitemap.xml');
+    const clientBuild = path.join(__dirname, '..', 'client', 'build', 'sitemap.xml');
+    const serverPublic = path.join(__dirname, 'public', 'sitemap.xml');
+    const tryFiles = [clientBuild, clientPublic, serverPublic];
+    for (const f of tryFiles) {
+        try {
+            if (fs.existsSync(f)) {
+                res.setHeader('Content-Type', 'application/xml');
+                res.sendFile(f);
+                return;
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+    res.status(404).send('sitemap not found');
+});
 
 // Register API routes
 app.use('/api', apiRouter);
