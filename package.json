@@ -7,7 +7,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
     "backfill:orderNumbers": "node scripts/backfillOrderNumbers.js"
   },
   "dependencies": {
