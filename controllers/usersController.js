@@ -126,7 +126,16 @@ export const getUserById = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
-    const user = await UserModel.findByIdAndUpdate(req.params.id, req.body, { new: true }).select('-password');
+    const requesterId = req.user && req.user.id;
+    const role = req.user && req.user.role;
+    const isAdmin = role === 'manager' || role === 'superadmin';
+    if (!requesterId) return res.status(401).json({ error: 'Not authenticated' });
+    if (!isAdmin && requesterId !== req.params.id) {
+      return res.status(403).json({ error: 'لا يمكنك تعديل حساب عميل آخر' });
+    }
+    const update = { ...req.body };
+    delete update.refreshToken;
+    const user = await UserModel.findByIdAndUpdate(req.params.id, update, { new: true }).select('-password -refreshToken');
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {

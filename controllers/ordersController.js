@@ -1,19 +1,86 @@
 import OrderModel from '../models/Orders.js';
 import ProductModel from '../models/products.js';
 import PromotionModel from '../models/Promotions.js';
+import StoreDiscountModel from '../models/StoreDiscount.js';
 import UserModel from '../models/users.js';
+
+const THIRTY_MIN_MS = 30 * 60 * 1000;
+const CANCELLED_STATUSES = new Set(['cancelled', 'refunded']);
+const COMPLETED_STATUSES = new Set(['delivered']);
+const IN_PROGRESS_STATUSES = new Set(['pending', 'paid', 'processing', 'shipped']);
+
+const normalizePhone = (value = '') => String(value || '').replace(/[^0-9+]/g, '').replace(/^\+/, '');
+
+const canCancelOrder = (order) => {
+  if (!order) return false;
+  const status = order.status;
+  if (!status) return false;
+  if (CANCELLED_STATUSES.has(status) || status === 'shipped' || status === 'delivered') return false;
+  const created = new Date(order.createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  return (Date.now() - created) <= THIRTY_MIN_MS;
+};
+
+const toPublicOrderSummary = (doc) => {
+  const order = doc?.toObject ? doc.toObject() : doc;
+  const cancellable = canCancelOrder(order);
+  const cancelableUntil = cancellable && order.createdAt
+    ? new Date(new Date(order.createdAt).getTime() + THIRTY_MIN_MS)
+    : null;
+  return {
+    id: order._id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    createdAt: order.createdAt,
+    totalPrice: order.totalPrice,
+    shippingFee: order.shippingFee || 0,
+    userDetails: order.userDetails,
+    canCancel: cancellable,
+    cancelableUntil
+  };
+};
+
+const toPublicOrderDetail = (doc) => {
+  const base = toPublicOrderSummary(doc);
+  const order = doc?.toObject ? doc.toObject() : doc;
+  return {
+    ...base,
+    products: order.products,
+    discountAmount: order.discountAmount,
+    originalTotalPrice: order.originalTotalPrice,
+    storeDiscountAmount: order.storeDiscountAmount,
+    storeDiscount: order.storeDiscount,
+    coupon: order.coupon,
+    shippingFee: order.shippingFee || 0
+  };
+};
 
 export const createOrder = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
-    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
     const { products: incoming = [], totalPrice } = req.body || {};
     if (!Array.isArray(incoming) || incoming.length === 0) return res.status(400).json({ error: 'No products provided' });
 
-    // fetch user details
-    const user = await UserModel.findById(userId).select('-password -refreshToken');
-    if (!user) return res.status(400).json({ error: 'User not found' });
+    // determine customer details: registered user OR guest-provided details
+    let user = null;
+    let userDetails = {};
+    if (userId) {
+      user = await UserModel.findById(userId).select('-password -refreshToken');
+      if (!user) return res.status(400).json({ error: 'User not found' });
+      userDetails = {
+        username: user.username,
+        Address: user.Address || '',
+        phoneNumber: user.phoneNumber || ''
+      };
+    } else {
+      // guest: accept orders with minimal info. Only product-related fields (name, sell, cost)
+      // are strictly required for pricing — user contact info is optional.
+      const name = (req.body && (req.body.name || (req.body.userDetails && req.body.userDetails.username))) || '';
+      const address = (req.body && (req.body.address || (req.body.userDetails && req.body.userDetails.Address))) || '';
+      const phone = (req.body && (req.body.phone || (req.body.userDetails && req.body.userDetails.phoneNumber))) || '';
+      userDetails = { username: name || 'Guest', Address: address || '', phoneNumber: phone || '' };
+    }
 
     // prepare products array by fetching product details from DB
     const productPromises = incoming.map(async p => {
@@ -22,21 +89,30 @@ export const createOrder = async (req, res) => {
       if (!pid) throw new Error('Invalid product id');
       const prod = await ProductModel.findById(pid);
       if (!prod) throw new Error(`Product not found: ${pid}`);
+      const numberValue = prod.Number ?? prod.number ?? 0;
       return {
-        product: prod._id,
-        productDetails: {
-          Number: prod.Number,
-          Name: prod.Name,
-          Sell: prod.Sell,
-          Cost: prod.cost || 0,
-          Category: prod.Category,
-          Subcategory: prod.Subcategory,
-          Material: prod.Material,
-          Season: prod.Season,
-          Style: prod.Style
-        },
-        quantity: qty
-      };
+          product: prod._id,
+          productDetails: {
+            // keep legacy capitalized keys for backward-compatibility
+            Number: numberValue,
+            Name: prod.Name,
+            Sell: prod.Sell,
+            Cost: prod.cost || 0,
+            Category: prod.Category,
+            Subcategory: prod.Subcategory,
+            Material: prod.Material,
+            Season: prod.Season,
+            Style: prod.Style,
+            // product image (if available)
+            imageUrl: prod.imageUrl || (prod.images && prod.images[0]) || undefined,
+            // also populate lowercase keys for future-proofing / standardization
+            number: numberValue,
+            name: prod.Name,
+            sell: prod.Sell,
+            cost: prod.cost || 0
+          },
+          quantity: qty
+        };
     });
 
     let products = [];
@@ -70,26 +146,136 @@ export const createOrder = async (req, res) => {
       try { promo.usedCount = (promo.usedCount || 0) + 1; await promo.save(); } catch(e){ /* ignore */ }
     }
 
-    const finalTotal = Math.max(0, Math.round((baseTotal - discountAmount) * 100) / 100);
+    // store config (discount + shipping)
+    let storeDiscountAmount = 0;
+    let appliedStoreDiscount = null;
+    let shippingFee = 0;
+    let storeConfig = null;
+    try {
+      storeConfig = await StoreDiscountModel.findOne();
+    } catch (e) {
+      storeConfig = null;
+    }
+    if (storeConfig && storeConfig.active && storeConfig.value > 0) {
+      const meetsThreshold = storeConfig.type === 'general' || baseTotal >= (storeConfig.minTotal || 0);
+      if (meetsThreshold) {
+        storeDiscountAmount = Math.round(baseTotal * (storeConfig.value / 100) * 100) / 100;
+        if (storeDiscountAmount > baseTotal) storeDiscountAmount = baseTotal;
+        appliedStoreDiscount = {
+          type: storeConfig.type,
+          value: storeConfig.value,
+          minTotal: storeConfig.type === 'threshold' ? (storeConfig.minTotal || 0) : 0
+        };
+      }
+    }
+    if (storeConfig && storeConfig.shipping && storeConfig.shipping.enabled && storeConfig.shipping.amount > 0) {
+      shippingFee = Math.max(0, storeConfig.shipping.amount);
+    }
 
-    const order = new OrderModel({
-      user: user._id,
-      userDetails: {
-        username: user.username,
-        Address: user.Address || '',
-        phoneNumber: user.phoneNumber || ''
-      },
+    const finalTotal = Math.max(0, Math.round((baseTotal - discountAmount - storeDiscountAmount + shippingFee) * 100) / 100);
+
+    // generate a short random 5-digit order number (string, zero-padded) and ensure uniqueness
+    const generateOrderNumber = () => String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+    let orderNumber = generateOrderNumber();
+    let attempts = 0;
+    while (await OrderModel.findOne({ orderNumber })) {
+      orderNumber = generateOrderNumber();
+      attempts += 1;
+      if (attempts > 10) break;
+    }
+
+    const orderData = {
+      user: user ? user._id : undefined,
+      userDetails,
+      orderNumber,
       products,
       totalPrice: finalTotal,
       originalTotalPrice: baseTotal,
       discountAmount,
-      coupon: appliedCoupon
-    });
+      coupon: appliedCoupon,
+      storeDiscountAmount,
+      storeDiscount: appliedStoreDiscount,
+      shippingFee
+    };
 
+    const order = new OrderModel(orderData);
     await order.save();
+    // return only limited fields for guests? We return the created order (admin can fetch full)
     res.status(201).json(order);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+};
+
+// public: lookup order by short order number (guest receipt/tracking)
+export const trackOrder = async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    if (!orderNumber) return res.status(400).json({ error: 'Order number required' });
+    const order = await OrderModel.findOne({ orderNumber });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const phone = (req.query && req.query.phone) || (req.body && req.body.phone) || '';
+    if (!phone) return res.status(400).json({ error: 'Phone number required to view this receipt' });
+    if (normalizePhone(order.userDetails && order.userDetails.phoneNumber) !== normalizePhone(phone)) {
+      return res.status(403).json({ error: 'Phone number does not match order' });
+    }
+    res.json(toPublicOrderDetail(order));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const trackOrdersByPhone = async (req, res) => {
+  try {
+    const phone = (req.query && req.query.phone) || '';
+    const normalized = normalizePhone(phone);
+    if (!normalized) return res.status(400).json({ error: 'Phone number is required' });
+    const orders = await OrderModel.find({ 'userDetails.phoneNumber': normalized }).sort({ createdAt: -1 }).lean();
+    const grouped = { inProgress: [], completed: [], cancelled: [] };
+    for (const order of orders) {
+      const summary = toPublicOrderSummary(order);
+      // attach a small thumbnail (first product image) when available for UI list previews
+      const firstProduct = Array.isArray(order.products) && order.products.length ? order.products[0] : null;
+      const firstImage = firstProduct && (firstProduct.productDetails?.imageUrl || firstProduct.imageUrl || (firstProduct.product && (firstProduct.product.imageUrl || firstProduct.product.image) ) || '');
+      if (firstImage) summary.firstProductImage = firstImage;
+      if (CANCELLED_STATUSES.has(order.status)) grouped.cancelled.push(summary);
+      else if (COMPLETED_STATUSES.has(order.status)) grouped.completed.push(summary);
+      else grouped.inProgress.push(summary);
+    }
+    res.json({
+      phone: normalized,
+      summary: {
+        total: orders.length,
+        inProgress: grouped.inProgress.length,
+        completed: grouped.completed.length,
+        cancelled: grouped.cancelled.length
+      },
+      grouped
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const cancelOrderByPhone = async (req, res) => {
+  try {
+    const { orderNumber } = req.params;
+    const phone = (req.body && req.body.phone) || (req.query && req.query.phone) || '';
+    if (!orderNumber || !phone) return res.status(400).json({ error: 'Order number and phone are required' });
+    const order = await OrderModel.findOne({ orderNumber });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (normalizePhone(order.userDetails && order.userDetails.phoneNumber) !== normalizePhone(phone)) {
+      return res.status(403).json({ error: 'Phone number does not match order' });
+    }
+    if (!canCancelOrder(order)) {
+      return res.status(400).json({ error: 'Order can no longer be cancelled' });
+    }
+    order.status = 'cancelled';
+    order.cancelledAt = new Date();
+    await order.save();
+    res.json({ message: 'Order cancelled', order: toPublicOrderDetail(order) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -213,7 +399,7 @@ export const cancelOrder = async (req, res) => {
     const order = await OrderModel.findById(req.params.id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const userId = req.user && req.user.id;
-    if (!userId || order.user.toString() !== userId) return res.status(403).json({ error: 'Access denied' });
+    if (!userId || !order.user || order.user.toString() !== userId) return res.status(403).json({ error: 'Access denied' });
     if (order.status === 'shipped' || order.status === 'delivered') {
       return res.status(400).json({ error: 'Cannot cancel an order that has already been shipped or delivered' });
     }
@@ -259,6 +445,80 @@ export const removeCoupon = async (req, res) => {
     order.coupon = undefined;
     await order.save();
     res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getOrderCustomers = async (req, res) => {
+  try {
+    const customers = await OrderModel.aggregate([
+      { $match: { 'userDetails.phoneNumber': { $exists: true, $ne: '' } } },
+      {
+        $group: {
+          _id: '$userDetails.phoneNumber',
+          name: { $last: '$userDetails.username' },
+          address: { $last: '$userDetails.Address' },
+          totalOrders: { $sum: 1 },
+          totalSpend: { $sum: '$totalPrice' },
+          lastOrderAt: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { lastOrderAt: -1 } }
+    ]);
+    const mapped = customers.map(c => ({
+      phoneNumber: c._id,
+      name: c.name || '',
+      address: c.address || '',
+      totalOrders: c.totalOrders || 0,
+      totalSpend: c.totalSpend || 0,
+      lastOrderAt: c.lastOrderAt
+    }));
+    res.json(mapped);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const exportOrderCustomersCsv = async (req, res) => {
+  try {
+    const customers = await OrderModel.aggregate([
+      { $match: { 'userDetails.phoneNumber': { $exists: true, $ne: '' } } },
+      {
+        $group: {
+          _id: '$userDetails.phoneNumber',
+          name: { $last: '$userDetails.username' },
+          address: { $last: '$userDetails.Address' },
+          totalOrders: { $sum: 1 },
+          totalSpend: { $sum: '$totalPrice' },
+          lastOrderAt: { $max: '$createdAt' }
+        }
+      },
+      { $sort: { lastOrderAt: -1 } }
+    ]);
+    const escape = (v) => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const header = ['phoneNumber', 'name', 'address', 'totalOrders', 'totalSpend', 'lastOrderAt'];
+    const rows = customers.map(c => ({
+      phoneNumber: c._id,
+      name: c.name || '',
+      address: c.address || '',
+      totalOrders: c.totalOrders || 0,
+      totalSpend: c.totalSpend || 0,
+      lastOrderAt: c.lastOrderAt ? new Date(c.lastOrderAt).toISOString() : ''
+    }));
+    const csv = [header.join(',')]
+      .concat(rows.map(r => header.map(h => escape(r[h])).join(',')))
+      .join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="customers-${Date.now()}.csv"`);
+    res.send(csv);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

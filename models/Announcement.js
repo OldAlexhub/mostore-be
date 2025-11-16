@@ -6,6 +6,7 @@ const AnnouncementSchema = new mongoose.Schema({
   active: { type: Boolean, default: true },
   startsAt: { type: Date },
   endsAt: { type: Date },
+  priority: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

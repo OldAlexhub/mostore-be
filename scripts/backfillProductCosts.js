@@ -19,14 +19,15 @@ async function backfill(dryRun = true) {
 
     for (const p of missing) {
       // Find most recent order that contains this product and has a productDetails.Cost
-      const ord = await OrderModel.findOne({ 'products.product': p._id, 'products.productDetails.Cost': { $ne: null } }).sort({ createdAt: -1 }).select('products').lean();
+      // look for historical cost stored under either 'Cost' or 'cost' in order snapshots
+      const ord = await OrderModel.findOne({ 'products.product': p._id, $or: [{ 'products.productDetails.Cost': { $ne: null } }, { 'products.productDetails.cost': { $ne: null } }] }).sort({ createdAt: -1 }).select('products').lean();
       if (!ord) {
         console.log(`[skip] ${p._id} ${p.Name} — no historical cost found`);
         continue;
       }
       // locate the matching product line
       const line = ord.products.find(lp => lp.product && String(lp.product) === String(p._id));
-      const costVal = line && line.productDetails && (typeof line.productDetails.Cost !== 'undefined') ? line.productDetails.Cost : null;
+      const costVal = line && line.productDetails && ((typeof line.productDetails.Cost !== 'undefined') ? line.productDetails.Cost : ((typeof line.productDetails.cost !== 'undefined') ? line.productDetails.cost : null));
       if (costVal === null || typeof costVal === 'undefined') {
         console.log(`[skip] ${p._id} ${p.Name} — no cost in matched order`);
         continue;

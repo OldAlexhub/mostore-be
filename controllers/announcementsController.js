@@ -3,8 +3,7 @@ import AnnouncementModel from '../models/Announcement.js';
 export const getAnnouncement = async (req, res) => {
   try {
     const now = new Date();
-    // find active announcement within schedule (or with no schedule)
-    const ann = await AnnouncementModel.findOne({
+    const anns = await AnnouncementModel.find({
       active: true,
       $or: [
         { startsAt: { $exists: false }, endsAt: { $exists: false } },
@@ -12,10 +11,18 @@ export const getAnnouncement = async (req, res) => {
         { startsAt: { $lte: now }, endsAt: { $exists: false } },
         { startsAt: { $lte: now }, endsAt: { $gte: now } }
       ]
-    }).sort({ createdAt: -1 }).lean();
+    }).sort({ priority: -1, createdAt: -1 }).lean();
 
-    if (!ann) return res.json(null);
-    res.json(ann);
+    res.json(anns);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const listAnnouncements = async (req, res) => {
+  try {
+    const anns = await AnnouncementModel.find().sort({ priority: -1, createdAt: -1 }).lean();
+    res.json(anns);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

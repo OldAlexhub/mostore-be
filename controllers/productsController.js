@@ -13,11 +13,15 @@ export const createProduct = async (req, res) => {
 export const getProducts = async (req, res) => {
   try {
     // Build filter from query params (support comma-separated multi-values)
-    const { sort } = req.query;
+    const { sort, cat } = req.query;
+    const querySource = { ...req.query };
+    if (!querySource.Category && cat) {
+      querySource.Category = cat;
+    }
     const fields = ['Category', 'Subcategory', 'Material', 'Season', 'Style'];
     const filter = {};
     for (const f of fields) {
-      const v = req.query[f];
+      const v = querySource[f];
       if (!v) continue;
       // allow comma-separated lists
       const parts = v.toString().split(',').map(s => s.trim()).filter(Boolean);

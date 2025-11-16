@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 const router = express.Router();
 
 router.get('/', announcementsCtrl.getAnnouncement);
+router.get('/manage', requireAuth, requireRole('manager'), announcementsCtrl.listAnnouncements);
 
 // Admin routes
 router.post('/', requireAuth, requireRole('manager'), announcementsCtrl.createAnnouncement);

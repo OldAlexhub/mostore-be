@@ -11,6 +11,7 @@ import promotionsRouter from './promotions.js';
 import reportsRouter from './reports.js';
 import revenueRouter from './revenue.js';
 import usersRouter from './users.js';
+import storeRouter from './store.js';
 
 const router = express.Router();
 
@@ -26,6 +27,7 @@ router.use('/announcements', announcementsRouter);
 router.use('/promotions', promotionsRouter);
 router.use('/reports', reportsRouter);
 router.use('/accounting', accountingRouter);
+router.use('/store', storeRouter);
   
 
 export default router;

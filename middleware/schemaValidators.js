@@ -14,22 +14,22 @@ const adminLoginSchema = Joi.object({
 });
 
 const productSchema = Joi.object({
-  Number: Joi.number().required(),
+  Number: Joi.number().optional(),
   Name: Joi.string().required(),
-  QTY: Joi.number().min(0).required(),
+  QTY: Joi.number().min(0).optional(),
   Sell: Joi.number().min(0).required(),
   // cost per unit for accounting
-  cost: Joi.number().min(0).optional(),
+  cost: Joi.number().min(0).required(),
   // minimum desired quantity to trigger low-stock alerts
   minQty: Joi.number().min(0).optional(),
   // optional extra fields used by the admin UI
-  imageUrl: Joi.string().uri().optional(),
-  Description: Joi.string().optional(),
-  Category: Joi.string().optional(),
-  Subcategory: Joi.string().optional(),
-  Material: Joi.string().optional(),
-  Season: Joi.string().optional(),
-  Style: Joi.string().optional()
+  imageUrl: Joi.string().uri().allow('').optional(),
+  Description: Joi.string().allow('').optional(),
+  Category: Joi.string().allow('').optional(),
+  Subcategory: Joi.string().allow('').optional(),
+  Material: Joi.string().allow('').optional(),
+  Season: Joi.string().allow('').optional(),
+  Style: Joi.string().allow('').optional()
 });
 
 const userCreateSchema = Joi.object({

@@ -13,6 +13,7 @@ export const createAdmin = async (req, res) => {
     await admin.save();
     const out = admin.toObject();
     delete out.password;
+    delete out.refreshToken;
     // audit log (record who created this admin)
     try {
       await AuditLogModel.create({ action: 'admin.create', actor: req.user?._id, actorUsername: req.user?.username, target: admin._id, targetUsername: admin.username, details: { role }, ip: req.ip });
@@ -79,7 +80,7 @@ export const adminRegister = async (req, res) => {
 
 export const getAdmins = async (req, res) => {
   try {
-    const admins = await AdminModel.find();
+    const admins = await AdminModel.find().select('-password -refreshToken');
     res.json(admins);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -101,7 +102,7 @@ export const getMyAdmin = async (req, res) => {
 
 export const getAdminById = async (req, res) => {
   try {
-    const admin = await AdminModel.findById(req.params.id);
+    const admin = await AdminModel.findById(req.params.id).select('-password -refreshToken');
     if (!admin) return res.status(404).json({ error: 'Admin not found' });
     res.json(admin);
   } catch (err) {
@@ -114,7 +115,7 @@ export const updateAdmin = async (req, res) => {
     // load previous to detect role changes
     const prev = await AdminModel.findById(req.params.id);
     if (!prev) return res.status(404).json({ error: 'Admin not found' });
-    const admin = await AdminModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const admin = await AdminModel.findByIdAndUpdate(req.params.id, req.body, { new: true }).select('-password -refreshToken');
     // if role changed, record audit
     if (req.body && typeof req.body.role !== 'undefined' && String(req.body.role) !== String(prev.role)) {
       try {

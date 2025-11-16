@@ -7,12 +7,6 @@ export const requireAuth = (req, res, next) => {
   const tokenFromCookie = req.cookies && req.cookies.token;
   const authHeader = req.headers.authorization;
   let token = tokenFromCookie;
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      console.debug('[auth] incoming cookies:', req.cookies);
-      console.debug('[auth] auth header present:', !!authHeader);
-    } catch (e) {}
-  }
   if (!token && authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1];
   }
@@ -29,7 +23,14 @@ export const requireAuth = (req, res, next) => {
 };
 
 export const requireRole = (role) => (req, res, next) => {
-  // Role checks are intentionally disabled to give all admin roles equal privileges.
-  // This function remains here for compatibility with route declarations but will not block any role.
-  return next();
+  const hierarchy = {
+    staff: 1,
+    manager: 2,
+    admin: 2, // legacy role name
+    superadmin: 3
+  };
+  const needed = hierarchy[role] || 0;
+  const currentRole = req.user && req.user.role ? hierarchy[req.user.role] || 0 : 0;
+  if (currentRole >= needed) return next();
+  return res.status(403).json({ error: 'Insufficient permissions' });
 };
