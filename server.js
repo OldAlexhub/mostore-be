@@ -8,6 +8,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import connectToDB from './db/connectToDB.js';
 import apiRouter from './routes/index.js';
+import { Server as SocketIOServer } from 'socket.io';
+import registerChatHandlers from './socket/registerChatHandlers.js';
+import { setSocketServer } from './socket/socketState.js';
 
 dotenv.config();
 
@@ -97,6 +100,20 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT} (env=${process.env.NODE_ENV || 'development'})`);
 });
+
+const io = new SocketIOServer(server, {
+    cors: {
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            if (clientOrigin.includes(origin)) return callback(null, true);
+            return callback(new Error('Not allowed by CORS'));
+        },
+        credentials: true
+    }
+});
+
+setSocketServer(io);
+registerChatHandlers(io);
 
 // Graceful shutdown
 const shutdown = async () => {

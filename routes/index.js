@@ -12,6 +12,7 @@ import reportsRouter from './reports.js';
 import revenueRouter from './revenue.js';
 import usersRouter from './users.js';
 import storeRouter from './store.js';
+import chatRouter from './chat.js';
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.use('/promotions', promotionsRouter);
 router.use('/reports', reportsRouter);
 router.use('/accounting', accountingRouter);
 router.use('/store', storeRouter);
+router.use('/chat', chatRouter);
   
 
 export default router;
