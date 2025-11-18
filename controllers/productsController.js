@@ -1,10 +1,34 @@
 import ProductModel from '../models/products.js';
 
+const deriveStockStatus = (product) => {
+  const qty = Number(product?.QTY ?? 0);
+  const min = Number(product?.minQty ?? 0);
+  if (qty <= 0) return 'out_of_stock';
+  const lowThreshold = min > 0 ? min : 3;
+  if (qty <= lowThreshold) return 'low_stock';
+  return 'in_stock';
+};
+
+const attachStockStatus = (doc) => {
+  if (!doc) return doc;
+  const status = deriveStockStatus(doc);
+  const setStatus = (target) => {
+    target.stockStatus = status;
+    target.isOutOfStock = status === 'out_of_stock';
+    return target;
+  };
+  if (typeof doc.toObject === 'function') {
+    const plain = doc.toObject();
+    return setStatus(plain);
+  }
+  return setStatus(doc);
+};
+
 export const createProduct = async (req, res) => {
   try {
     const product = new ProductModel(req.body);
     await product.save();
-    res.status(201).json(product);
+    res.status(201).json(attachStockStatus(product));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -47,12 +71,13 @@ export const getProducts = async (req, res) => {
       const pages = Math.max(1, Math.ceil(total / limit));
       const p = Math.min(page, pages);
       const products = await query.skip((p - 1) * limit).limit(limit).lean();
-      return res.json({ products, total, page: p, pages, limit });
+      const decorated = products.map(attachStockStatus);
+      return res.json({ products: decorated, total, page: p, pages, limit });
     }
 
     // No pagination requested — return array for backward compatibility
     const products = await query.lean();
-    res.json(products);
+    res.json(products.map(attachStockStatus));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -120,7 +145,7 @@ export const searchProducts = async (req, res) => {
       return (b.product.Sell || 0) - (a.product.Sell || 0);
     });
 
-    const results = scored.slice(0, limit).map(s => s.product);
+    const results = scored.slice(0, limit).map(s => attachStockStatus(s.product));
     res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -138,7 +163,10 @@ export const getHiddenGems = async (req, res) => {
       .lean();
 
     // Map to return a consistent field name `soldQty` from `QTY`, keep `Sell` as price.
-    const gems = products.map(p => ({ ...p, soldQty: p.QTY || 0 }));
+    const gems = products.map(p => {
+      const decorated = attachStockStatus({ ...p });
+      return { ...decorated, soldQty: p.QTY || 0 };
+    });
 
     res.json(gems);
   } catch (err) {
@@ -150,7 +178,7 @@ export const getProductById = async (req, res) => {
   try {
     const product = await ProductModel.findById(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
+    res.json(attachStockStatus(product));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -160,7 +188,7 @@ export const updateProduct = async (req, res) => {
   try {
     const product = await ProductModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
+    res.json(attachStockStatus(product));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

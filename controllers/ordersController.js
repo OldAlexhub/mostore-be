@@ -89,6 +89,9 @@ export const createOrder = async (req, res) => {
       if (!pid) throw new Error('Invalid product id');
       const prod = await ProductModel.findById(pid);
       if (!prod) throw new Error(`Product not found: ${pid}`);
+      const availableQty = Number(prod.QTY ?? 0);
+      if (availableQty <= 0) throw new Error(`${prod.Name || 'المنتج'} غير متوفر حالياً`);
+      if (qty > availableQty) throw new Error(`${prod.Name || 'المنتج'} متاح بكمية ${availableQty} فقط`);
       const numberValue = prod.Number ?? prod.number ?? 0;
       return {
           product: prod._id,
@@ -129,6 +132,7 @@ export const createOrder = async (req, res) => {
     let appliedCoupon = null;
     let discountAmount = 0;
     const couponCode = (req.body && req.body.couponCode) ? String(req.body.couponCode).trim().toUpperCase() : null;
+    let promoToIncrement = null;
     if (couponCode) {
       const promo = await PromotionModel.findOne({ code: couponCode });
       if (!promo || !promo.active) return res.status(400).json({ error: 'Invalid or inactive coupon' });
@@ -141,9 +145,7 @@ export const createOrder = async (req, res) => {
       else if (promo.type === 'percent') discountAmount = Math.round((promo.value / 100) * baseTotal * 100) / 100;
       if (discountAmount > baseTotal) discountAmount = baseTotal;
       appliedCoupon = { code: promo.code, type: promo.type, value: promo.value };
-
-      // increment usage count
-      try { promo.usedCount = (promo.usedCount || 0) + 1; await promo.save(); } catch(e){ /* ignore */ }
+      promoToIncrement = promo;
     }
 
     // store config (discount + shipping)
@@ -174,6 +176,32 @@ export const createOrder = async (req, res) => {
 
     const finalTotal = Math.max(0, Math.round((baseTotal - discountAmount - storeDiscountAmount + shippingFee) * 100) / 100);
 
+    const stockAdjustments = [];
+    const rollbackStockAdjustments = async () => {
+      if (!stockAdjustments.length) return;
+      await Promise.all(
+        stockAdjustments.map(adj => ProductModel.updateOne({ _id: adj.productId }, { $inc: { QTY: adj.qty } }))
+      );
+      stockAdjustments.length = 0;
+    };
+
+    try {
+      for (const item of products) {
+        const updated = await ProductModel.findOneAndUpdate(
+          { _id: item.product, QTY: { $gte: item.quantity } },
+          { $inc: { QTY: -item.quantity } },
+          { new: true }
+        );
+        if (!updated) {
+          throw new Error(`${item.productDetails?.Name || 'المنتج'} غير متاح بالكمية المطلوبة`);
+        }
+        stockAdjustments.push({ productId: item.product, qty: item.quantity });
+      }
+    } catch (stockErr) {
+      await rollbackStockAdjustments();
+      return res.status(400).json({ error: stockErr.message || 'لا توجد كمية كافية للمنتج المطلوب' });
+    }
+
     // generate a short random 5-digit order number (string, zero-padded) and ensure uniqueness
     const generateOrderNumber = () => String(Math.floor(Math.random() * 100000)).padStart(5, '0');
     let orderNumber = generateOrderNumber();
@@ -199,7 +227,21 @@ export const createOrder = async (req, res) => {
     };
 
     const order = new OrderModel(orderData);
-    await order.save();
+    try {
+      await order.save();
+    } catch (saveErr) {
+      await rollbackStockAdjustments();
+      throw saveErr;
+    }
+    if (promoToIncrement) {
+      try {
+        promoToIncrement.usedCount = (promoToIncrement.usedCount || 0) + 1;
+        await promoToIncrement.save();
+      } catch (promoErr) {
+        // ignore usage count failure to avoid blocking order
+        console.warn('[orders] failed to increment promo usage', promoErr?.message);
+      }
+    }
     // return only limited fields for guests? We return the created order (admin can fetch full)
     res.status(201).json(order);
   } catch (err) {
