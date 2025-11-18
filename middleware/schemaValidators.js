@@ -24,12 +24,20 @@ const productSchema = Joi.object({
   minQty: Joi.number().min(0).optional(),
   // optional extra fields used by the admin UI
   imageUrl: Joi.string().uri().allow('').optional(),
+  secondaryImageUrl: Joi.string().uri().allow('').optional(),
+  imageGallery: Joi.array().items(Joi.string().uri()).max(10).optional(),
   Description: Joi.string().allow('').optional(),
   Category: Joi.string().allow('').optional(),
   Subcategory: Joi.string().allow('').optional(),
   Material: Joi.string().allow('').optional(),
   Season: Joi.string().allow('').optional(),
   Style: Joi.string().allow('').optional()
+});
+
+const productReviewSchema = Joi.object({
+  customerName: Joi.string().trim().max(120).allow('').optional(),
+  rating: Joi.number().integer().min(1).max(5).required(),
+  comment: Joi.string().trim().allow('').required()
 });
 
 const userCreateSchema = Joi.object({
@@ -43,4 +51,5 @@ const userCreateSchema = Joi.object({
 export const validateAdminCreate = validateBody(adminCreateSchema);
 export const validateAdminLogin = validateBody(adminLoginSchema);
 export const validateProduct = validateBody(productSchema);
+export const validateProductReview = validateBody(productReviewSchema);
 export const validateUserCreate = validateBody(userCreateSchema);

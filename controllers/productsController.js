@@ -175,3 +175,38 @@ export const deleteProduct = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+export const getProductReviews = async (req, res) => {
+  try {
+    const product = await ProductModel.findById(req.params.id).select('reviews');
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    res.json(product.reviews || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const addProductReview = async (req, res) => {
+  try {
+    const product = await ProductModel.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    const customerName = (req.body.customerName || '').trim() || 'زائر';
+    const comment = (req.body.comment || '').trim();
+    const rating = Number(req.body.rating);
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+    }
+    const review = {
+      customerName,
+      comment,
+      rating,
+      createdAt: new Date()
+    };
+    if (!Array.isArray(product.reviews)) product.reviews = [];
+    product.reviews.unshift(review);
+    await product.save();
+    res.status(201).json(review);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};

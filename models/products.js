@@ -10,6 +10,10 @@ const ProductsSchema = new mongoose.Schema({
     cost: { type: Number, required: true, default: 0, min: 0 },
     // public image URL for product listing
     imageUrl: { type: String, required: false },
+    // optional secondary image for gallery-style layouts
+    secondaryImageUrl: { type: String, required: false },
+    // optional gallery (kept flexible for future expansion beyond 2 images)
+    imageGallery: { type: [String], required: false, default: [] },
     // longer product description
     Description: { type: String, required: false },
     // Minimum desired quantity to trigger low-stock alerts
@@ -19,7 +23,15 @@ const ProductsSchema = new mongoose.Schema({
     Material: { type: String },
     Season: { type: String },
     Style: { type: String },
-    
+    reviews: {
+        type: [{
+            customerName: { type: String, required: true, trim: true, default: 'زائر' },
+            rating: { type: Number, required: true, min: 1, max: 5 },
+            comment: { type: String, required: false, trim: true },
+            createdAt: { type: Date, default: Date.now }
+        }],
+        default: []
+    }
 })
 
 // Auto-assign a unique incremental `Number` when creating products if not provided.

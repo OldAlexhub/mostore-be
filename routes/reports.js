@@ -9,5 +9,6 @@ router.get('/products', requireAuth, requireRole('manager'), reportsCtrl.exportP
 router.get('/orders', requireAuth, requireRole('manager'), reportsCtrl.exportOrdersCsv);
 router.get('/promotions', requireAuth, requireRole('manager'), reportsCtrl.exportPromotionsCsv);
 router.get('/users', requireAuth, requireRole('manager'), reportsCtrl.exportUsersCsvGeneric);
+router.get('/product-sales', requireAuth, requireRole('manager'), reportsCtrl.exportProductSalesReport);
 
 export default router;
