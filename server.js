@@ -29,7 +29,8 @@ const defaultOrigins = [
     'http://localhost:3002',
     'https://mostore.onrender.com',
     'https://mostore-admin.onrender.com',
-    'https://mostoreeg.com/'
+    'https://mostoreeg.com/',
+    'https://admin.mostoreeg.com/'
 ];
 const clientOrigin = process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : defaultOrigins;
 app.use(cors({
