@@ -5,10 +5,10 @@ import express from 'express';
 import fs from 'fs';
 import helmet from 'helmet';
 import path from 'path';
+import { Server as SocketIOServer } from 'socket.io';
 import { fileURLToPath } from 'url';
 import connectToDB from './db/connectToDB.js';
 import apiRouter from './routes/index.js';
-import { Server as SocketIOServer } from 'socket.io';
 import registerChatHandlers from './socket/registerChatHandlers.js';
 import { setSocketServer } from './socket/socketState.js';
 
@@ -28,7 +28,8 @@ const defaultOrigins = [
     'http://localhost:3000',
     'http://localhost:3002',
     'https://mostore.onrender.com',
-    'https://mostore-admin.onrender.com'
+    'https://mostore-admin.onrender.com',
+    'https://mostoreeg.com/'
 ];
 const clientOrigin = process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : defaultOrigins;
 app.use(cors({
