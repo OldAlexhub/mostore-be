@@ -30,7 +30,9 @@ const defaultOrigins = [
     'https://mostore.onrender.com',
     'https://mostore-admin.onrender.com',
     'https://mostoreeg.com/',
-    'https://admin.mostoreeg.com/'
+    'https://admin.mostoreeg.com/',
+    'mostoreeg.com/',
+    'admin.mostoreeg.com/'
 ];
 const clientOrigin = process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : defaultOrigins;
 app.use(cors({
