@@ -1,4 +1,49 @@
+import http from 'http';
+import https from 'https';
 import ProductModel from '../models/products.js';
+
+const requestPage = (url) => new Promise((resolve, reject) => {
+  if (!url) return resolve('');
+  try {
+    const parsed = new URL(url);
+    const client = parsed.protocol === 'http:' ? http : https;
+    const req = client.get(parsed, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MOStoreBot/1.0)' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirected = new URL(res.headers.location, parsed).toString();
+        requestPage(redirected).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode >= 400) {
+        resolve('');
+        return;
+      }
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+  } catch (err) {
+    resolve('');
+  }
+});
+
+const resolveImageUrl = async (raw) => {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return '';
+  if (/https?:\/\/i\.ibb\.co\//i.test(trimmed)) return trimmed;
+  if (/https?:\/\/(www\.)?ibb\.co\//i.test(trimmed)) {
+    try {
+      const html = await requestPage(trimmed);
+      const match = html && html.match(/property=["']og:image["']\s+content=["']([^"']+)/i);
+      if (match && match[1]) return match[1];
+    } catch (err) {
+      console.warn('[products] failed to resolve imgbb url', err?.message || err);
+    }
+    return trimmed;
+  }
+  return trimmed;
+};
 
 const deriveStockStatus = (product) => {
   const qty = Number(product?.QTY ?? 0);
@@ -24,9 +69,32 @@ const attachStockStatus = (doc) => {
   return setStatus(doc);
 };
 
+const normalizeGalleryInput = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    return value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+};
+
+const enrichImagePayload = async (payload = {}) => {
+  const next = { ...payload };
+  next.imageUrl = await resolveImageUrl(next.imageUrl);
+  next.secondaryImageUrl = await resolveImageUrl(next.secondaryImageUrl);
+  const galleryEntries = normalizeGalleryInput(next.imageGallery);
+  const resolvedGallery = [];
+  for (const entry of galleryEntries) {
+    const resolved = await resolveImageUrl(entry);
+    if (resolved) resolvedGallery.push(resolved);
+  }
+  next.imageGallery = resolvedGallery;
+  return next;
+};
+
 export const createProduct = async (req, res) => {
   try {
-    const product = new ProductModel(req.body);
+    const prepared = await enrichImagePayload(req.body);
+    const product = new ProductModel(prepared);
     await product.save();
     res.status(201).json(attachStockStatus(product));
   } catch (err) {
@@ -186,7 +254,8 @@ export const getProductById = async (req, res) => {
 
 export const updateProduct = async (req, res) => {
   try {
-    const product = await ProductModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const prepared = await enrichImagePayload(req.body);
+    const product = await ProductModel.findByIdAndUpdate(req.params.id, prepared, { new: true });
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(attachStockStatus(product));
   } catch (err) {
