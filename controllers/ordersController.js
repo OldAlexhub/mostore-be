@@ -9,7 +9,10 @@ const CANCELLED_STATUSES = new Set(['cancelled', 'refunded']);
 const COMPLETED_STATUSES = new Set(['delivered']);
 const IN_PROGRESS_STATUSES = new Set(['pending', 'paid', 'processing', 'shipped']);
 
+const PHONE_DIGIT_COUNT = 11;
+
 const normalizePhone = (value = '') => String(value || '').replace(/[^0-9+]/g, '').replace(/^\+/, '');
+const isValidPhoneNumber = (value = '') => normalizePhone(value).length === PHONE_DIGIT_COUNT;
 
 const normalizeImageValue = (value) => {
   if (!value || typeof value !== 'string') return '';
@@ -123,18 +126,22 @@ export const createOrder = async (req, res) => {
     if (userId) {
       user = await UserModel.findById(userId).select('-password -refreshToken');
       if (!user) return res.status(400).json({ error: 'User not found' });
+      const normalizedUserPhone = user.phoneNumber ? normalizePhone(user.phoneNumber) : '';
       userDetails = {
         username: user.username,
         Address: user.Address || '',
-        phoneNumber: user.phoneNumber || ''
+        phoneNumber: normalizedUserPhone
       };
     } else {
-      // guest: accept orders with minimal info. Only product-related fields (name, sell, cost)
-      // are strictly required for pricing — user contact info is optional.
+      // guest checkout: require a reachable phone number with an exact digit count
       const name = (req.body && (req.body.name || (req.body.userDetails && req.body.userDetails.username))) || '';
       const address = (req.body && (req.body.address || (req.body.userDetails && req.body.userDetails.Address))) || '';
       const phone = (req.body && (req.body.phone || (req.body.userDetails && req.body.userDetails.phoneNumber))) || '';
-      userDetails = { username: name || 'Guest', Address: address || '', phoneNumber: phone || '' };
+      if (!isValidPhoneNumber(phone)) {
+        return res.status(400).json({ error: `رقم الموبايل لازم يكون ${PHONE_DIGIT_COUNT} رقم.` });
+      }
+      const normalizedGuestPhone = normalizePhone(phone);
+      userDetails = { username: name || 'Guest', Address: address || '', phoneNumber: normalizedGuestPhone };
     }
 
     // prepare products array by fetching product details from DB
