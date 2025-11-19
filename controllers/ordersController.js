@@ -11,6 +11,61 @@ const IN_PROGRESS_STATUSES = new Set(['pending', 'paid', 'processing', 'shipped'
 
 const normalizePhone = (value = '') => String(value || '').replace(/[^0-9+]/g, '').replace(/^\+/, '');
 
+const normalizeImageValue = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  return trimmed || '';
+};
+
+const toArray = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    return value
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const pickImageFromSource = (source) => {
+  if (!source || typeof source !== 'object') return '';
+  const candidates = [
+    source.imageUrl,
+    source.image,
+    source.mainImage,
+    source.thumbnail,
+    source.thumbnailUrl,
+    source.secondaryImageUrl,
+    source.photo
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeImageValue(candidate);
+    if (normalized) return normalized;
+  }
+  const galleryCandidates = [...toArray(source.imageGallery), ...toArray(source.images)];
+  for (const candidate of galleryCandidates) {
+    const normalized = normalizeImageValue(candidate);
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+const resolvePrimaryImage = (...sources) => {
+  for (const candidateSource of sources) {
+    if (!candidateSource) continue;
+    if (typeof candidateSource === 'string') {
+      const normalized = normalizeImageValue(candidateSource);
+      if (normalized) return normalized;
+      continue;
+    }
+    const resolved = pickImageFromSource(candidateSource);
+    if (resolved) return resolved;
+  }
+  return '';
+};
+
 const canCancelOrder = (order) => {
   if (!order) return false;
   const status = order.status;
@@ -107,7 +162,7 @@ export const createOrder = async (req, res) => {
             Season: prod.Season,
             Style: prod.Style,
             // product image (if available)
-            imageUrl: prod.imageUrl || (prod.images && prod.images[0]) || undefined,
+            imageUrl: productImage || undefined,
             // also populate lowercase keys for future-proofing / standardization
             number: numberValue,
             name: prod.Name,
@@ -278,7 +333,7 @@ export const trackOrdersByPhone = async (req, res) => {
       const summary = toPublicOrderSummary(order);
       // attach a small thumbnail (first product image) when available for UI list previews
       const firstProduct = Array.isArray(order.products) && order.products.length ? order.products[0] : null;
-      const firstImage = firstProduct && (firstProduct.productDetails?.imageUrl || firstProduct.imageUrl || (firstProduct.product && (firstProduct.product.imageUrl || firstProduct.product.image) ) || '');
+      const firstImage = resolvePrimaryImage(firstProduct, firstProduct?.productDetails);
       if (firstImage) summary.firstProductImage = firstImage;
       if (CANCELLED_STATUSES.has(order.status)) grouped.cancelled.push(summary);
       else if (COMPLETED_STATUSES.has(order.status)) grouped.completed.push(summary);
