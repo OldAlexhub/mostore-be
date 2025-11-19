@@ -148,6 +148,7 @@ export const createOrder = async (req, res) => {
       if (availableQty <= 0) throw new Error(`${prod.Name || 'المنتج'} غير متوفر حالياً`);
       if (qty > availableQty) throw new Error(`${prod.Name || 'المنتج'} متاح بكمية ${availableQty} فقط`);
       const numberValue = prod.Number ?? prod.number ?? 0;
+      const productImage = resolvePrimaryImage(prod);
       return {
           product: prod._id,
           productDetails: {
