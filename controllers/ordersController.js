@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import OrderModel from '../models/Orders.js';
 import ProductModel from '../models/products.js';
 import PromotionModel from '../models/Promotions.js';
@@ -85,6 +86,14 @@ const toPublicOrderSummary = (doc) => {
   const cancelableUntil = cancellable && order.createdAt
     ? new Date(new Date(order.createdAt).getTime() + THIRTY_MIN_MS)
     : null;
+  // derive a small preview image (first product primary image) for summaries
+  let firstProductImage = null;
+  try {
+    const first = Array.isArray(order.products) && order.products.length ? order.products[0] : null;
+    firstProductImage = resolvePrimaryImage(first, first?.productDetails) || null;
+  } catch (e) {
+    firstProductImage = null;
+  }
   return {
     id: order._id,
     orderNumber: order.orderNumber,
@@ -95,6 +104,7 @@ const toPublicOrderSummary = (doc) => {
     userDetails: order.userDetails,
     canCancel: cancellable,
     cancelableUntil
+    , firstProductImage
   };
 };
 
@@ -111,6 +121,73 @@ const toPublicOrderDetail = (doc) => {
     coupon: order.coupon,
     shippingFee: order.shippingFee || 0
   };
+};
+
+// Enrich an array of orders with resolved product details where missing.
+const enrichOrdersWithProductDetails = async (orders = []) => {
+  if (!Array.isArray(orders) || !orders.length) return orders;
+  try {
+    // collect missing product ids
+    const ids = new Set();
+    for (const order of orders) {
+      if (!order || !Array.isArray(order.products)) continue;
+      for (const line of order.products) {
+        if (!line) continue;
+        // skip if productDetails already has a name and an image
+        const hasName = !!(line.productDetails && (line.productDetails.Name || line.productDetails.name));
+        const hasImage = !!resolvePrimaryImage(line, line.productDetails);
+        if (hasName && hasImage) continue;
+
+        // find product id candidate
+        let pid = null;
+        if (line.product) {
+          if (typeof line.product === 'string') pid = line.product;
+          else if (line.product && line.product._id) pid = line.product._id;
+        }
+        if (pid && mongoose.Types.ObjectId.isValid(pid)) ids.add(String(pid));
+      }
+    }
+
+    if (!ids.size) return orders;
+
+    const prodList = await ProductModel.find({ _id: { $in: [...ids] } }).lean();
+    const prodMap = new Map(prodList.map(p => [String(p._id), p]));
+
+    // merge product info into orders
+    const MAX_PROPS = ['Number','Name','Sell','cost','imageUrl','secondaryImageUrl','imageGallery','images'];
+    return orders.map((order) => {
+      if (!order || !Array.isArray(order.products)) return order;
+      const products = order.products.map((line) => {
+        if (!line) return line;
+        let pid = null;
+        if (line.product) {
+          if (typeof line.product === 'string') pid = line.product;
+          else if (line.product && line.product._id) pid = line.product._id;
+        }
+        const prod = pid && prodMap.has(String(pid)) ? prodMap.get(String(pid)) : null;
+        if (prod) {
+          const base = { ...(line.productDetails || {}) };
+          // fill missing fields conservatively
+          base.Number = base.Number ?? prod.Number ?? prod.number;
+          base.Name = base.Name || prod.Name || prod.name;
+          base.Sell = (typeof base.Sell !== 'undefined' && base.Sell !== null) ? base.Sell : (prod.Sell ?? prod.sell ?? 0);
+          base.Cost = (typeof base.Cost !== 'undefined' && base.Cost !== null) ? base.Cost : (prod.cost ?? prod.Cost ?? 0);
+          // attach resolved primary image and galleries
+          const resolved = resolvePrimaryImage(prod);
+          if (resolved) base.imageUrl = base.imageUrl || resolved;
+          if (Array.isArray(prod.imageGallery) && prod.imageGallery.length) base.imageGallery = base.imageGallery && base.imageGallery.length ? base.imageGallery : prod.imageGallery;
+          if (Array.isArray(prod.images) && prod.images.length) base.images = base.images && base.images.length ? base.images : prod.images;
+          return { ...line, productDetails: base };
+        }
+        return line;
+      });
+      return { ...order, products };
+    });
+  } catch (err) {
+    // on error, return original orders without failing
+    console.warn('[orders] enrichOrdersWithProductDetails failed', err?.message || err);
+    return orders;
+  }
 };
 
 export const createOrder = async (req, res) => {
@@ -317,14 +394,15 @@ export const trackOrder = async (req, res) => {
   try {
     const { orderNumber } = req.params;
     if (!orderNumber) return res.status(400).json({ error: 'Order number required' });
-    const order = await OrderModel.findOne({ orderNumber });
+    let order = await OrderModel.findOne({ orderNumber }).lean();
     if (!order) return res.status(404).json({ error: 'Order not found' });
     const phone = (req.query && req.query.phone) || (req.body && req.body.phone) || '';
     if (!phone) return res.status(400).json({ error: 'Phone number required to view this receipt' });
     if (normalizePhone(order.userDetails && order.userDetails.phoneNumber) !== normalizePhone(phone)) {
       return res.status(403).json({ error: 'Phone number does not match order' });
     }
-    res.json(toPublicOrderDetail(order));
+    const enriched = await enrichOrdersWithProductDetails([order]);
+    res.json(toPublicOrderDetail(enriched[0]));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -335,7 +413,8 @@ export const trackOrdersByPhone = async (req, res) => {
     const phone = (req.query && req.query.phone) || '';
     const normalized = normalizePhone(phone);
     if (!normalized) return res.status(400).json({ error: 'Phone number is required' });
-    const orders = await OrderModel.find({ 'userDetails.phoneNumber': normalized }).sort({ createdAt: -1 }).lean();
+    let orders = await OrderModel.find({ 'userDetails.phoneNumber': normalized }).sort({ createdAt: -1 }).lean();
+    orders = await enrichOrdersWithProductDetails(orders);
     const grouped = { inProgress: [], completed: [], cancelled: [] };
     for (const order of orders) {
       const summary = toPublicOrderSummary(order);
@@ -410,21 +489,44 @@ export const getOrders = async (req, res) => {
       filter['coupon.code'] = String(coupon).trim().toUpperCase();
     }
     if (q) {
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(escaped, 'i');
+      const or = [
         { 'userDetails.username': re },
         { 'userDetails.phoneNumber': re },
-        { 'products.productDetails.Name': re },
-        { _id: q }
+        { 'products.productDetails.Name': re }
       ];
+
+      // if q looks like an order number (digits only), match orderNumber (stored as string)
+      if (/^\d+$/.test(q)) {
+        or.push({ orderNumber: q });
+      }
+
+      // only try matching _id if q is a valid ObjectId (avoid cast errors)
+      if (mongoose.Types.ObjectId.isValid(q)) {
+        or.push({ _id: q });
+      }
+
+      filter.$or = or;
     }
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const lim = Math.max(1, Math.min(500, parseInt(limit, 10) || 50));
 
     const total = await OrderModel.countDocuments(filter);
-    const orders = await OrderModel.find(filter).sort({ createdAt: -1 }).skip((pageNum - 1) * lim).limit(lim);
-    res.json({ orders, total });
+    // use lean() for lightweight objects and enrich product metadata for previews
+    const orders = await OrderModel.find(filter).sort({ createdAt: -1 }).skip((pageNum - 1) * lim).limit(lim).lean();
+    let enriched = await enrichOrdersWithProductDetails(orders);
+    // attach a convenient top-level preview image to each order
+    enriched = enriched.map((o) => {
+      try {
+        const first = Array.isArray(o.products) && o.products.length ? o.products[0] : null;
+        return { ...o, firstProductImage: resolvePrimaryImage(first, first?.productDetails) || null };
+      } catch (e) {
+        return { ...o, firstProductImage: null };
+      }
+    });
+    res.json({ orders: enriched, total });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -441,8 +543,15 @@ export const getOrdersSummary = async (req, res) => {
     const cancelledCount = await OrderModel.countDocuments({ status: 'cancelled' });
     const newCount = await OrderModel.countDocuments({ status: 'pending', createdAt: { $gte: since } });
 
-    const recentNew = await OrderModel.find({ status: 'pending', createdAt: { $gte: since } }).sort({ createdAt: -1 }).limit(10);
-    const recentCompleted = await OrderModel.find({ status: { $in: ['shipped', 'delivered'] } }).sort({ createdAt: -1 }).limit(10);
+    let recentNew = await OrderModel.find({ status: 'pending', createdAt: { $gte: since } }).sort({ createdAt: -1 }).limit(10).lean();
+    let recentCompleted = await OrderModel.find({ status: { $in: ['shipped', 'delivered'] } }).sort({ createdAt: -1 }).limit(10).lean();
+
+    recentNew = await enrichOrdersWithProductDetails(recentNew);
+    recentCompleted = await enrichOrdersWithProductDetails(recentCompleted);
+
+    // add top-level preview image to the returned recent lists to simplify client usage
+    recentNew = recentNew.map((o) => ({ ...o, firstProductImage: resolvePrimaryImage(Array.isArray(o.products) && o.products.length ? o.products[0] : null, (Array.isArray(o.products) && o.products.length ? o.products[0].productDetails : null)) || null }));
+    recentCompleted = recentCompleted.map((o) => ({ ...o, firstProductImage: resolvePrimaryImage(Array.isArray(o.products) && o.products.length ? o.products[0] : null, (Array.isArray(o.products) && o.products.length ? o.products[0].productDetails : null)) || null }));
 
     res.json({ counts: { pending: pendingCount, shipped: shippedCount, delivered: deliveredCount, cancelled: cancelledCount, new: newCount }, recentNew, recentCompleted });
   } catch (err) {
@@ -452,7 +561,7 @@ export const getOrdersSummary = async (req, res) => {
 
 export const getOrderById = async (req, res) => {
   try {
-    const order = await OrderModel.findById(req.params.id);
+    let order = await OrderModel.findById(req.params.id).lean();
     if (!order) return res.status(404).json({ error: 'Order not found' });
     // ensure the requesting user owns the order OR is an admin/manager
     const requester = req.user && req.user.id;
@@ -462,7 +571,12 @@ export const getOrderById = async (req, res) => {
     if (!isAdmin && order.user.toString() !== requester) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(order);
+    // ensure embedded productDetails exist for each line
+    const enriched = await enrichOrdersWithProductDetails([order]);
+    const single = enriched[0] || order;
+    const first = Array.isArray(single.products) && single.products.length ? single.products[0] : null;
+    single.firstProductImage = resolvePrimaryImage(first, first?.productDetails) || null;
+    res.json(single);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -492,7 +606,16 @@ export const getMyOrders = async (req, res) => {
   try {
     const userId = req.user && req.user.id;
     if (!userId) return res.status(401).json({ error: 'Not authenticated' });
-    const orders = await OrderModel.find({ user: userId }).sort({ createdAt: -1 });
+    let orders = await OrderModel.find({ user: userId }).sort({ createdAt: -1 }).lean();
+    orders = await enrichOrdersWithProductDetails(orders);
+    orders = orders.map((o) => {
+      try {
+        const first = Array.isArray(o.products) && o.products.length ? o.products[0] : null;
+        return { ...o, firstProductImage: resolvePrimaryImage(first, first?.productDetails) || null };
+      } catch (e) {
+        return { ...o, firstProductImage: null };
+      }
+    });
     res.json(orders);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -25,7 +25,8 @@ const productSchema = Joi.object({
   // optional extra fields used by the admin UI
   imageUrl: Joi.string().uri().allow('').optional(),
   secondaryImageUrl: Joi.string().uri().allow('').optional(),
-  imageGallery: Joi.array().items(Joi.string().uri()).max(10).optional(),
+  // support up to 20 gallery image urls for a product
+  imageGallery: Joi.array().items(Joi.string().uri()).max(20).optional(),
   Description: Joi.string().allow('').optional(),
   Category: Joi.string().allow('').optional(),
   Subcategory: Joi.string().allow('').optional(),

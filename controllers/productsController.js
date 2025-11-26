@@ -87,7 +87,28 @@ const enrichImagePayload = async (payload = {}) => {
     const resolved = await resolveImageUrl(entry);
     if (resolved) resolvedGallery.push(resolved);
   }
-  next.imageGallery = resolvedGallery;
+
+  // Normalize combined set: primary, secondary, then gallery entries; enforce max total images
+  const combined = [];
+  const seen = new Set();
+  const pushUnique = (u) => {
+    if (!u) return;
+    const s = u.toString().trim();
+    if (!s) return;
+    if (seen.has(s)) return;
+    seen.add(s);
+    combined.push(s);
+  };
+  pushUnique(next.imageUrl);
+  pushUnique(next.secondaryImageUrl);
+  resolvedGallery.forEach(pushUnique);
+
+  const MAX_IMAGES = 20;
+  const limited = combined.slice(0, MAX_IMAGES);
+
+  next.imageUrl = limited[0] || '';
+  next.secondaryImageUrl = limited[1] || '';
+  next.imageGallery = limited.slice(2);
   return next;
 };
 
