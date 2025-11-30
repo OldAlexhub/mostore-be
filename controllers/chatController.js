@@ -73,6 +73,9 @@ export const startChat = async (req, res) => {
     if (!phone) {
       return res.status(400).json({ error: 'الرجاء إدخال رقم الهاتف' });
     }
+    if (!/^01[0-2,5]\d{8}$/.test(phone)) {
+      return res.status(400).json({ error: 'أدخل رقماً مصرياً صحيحاً مكوناً من 11 رقم (يبدأ بـ 01).' });
+    }
 
     const existing = await ChatSession.findOne({ customerPhone: phone, status: 'open' });
     if (existing) {
@@ -80,12 +83,6 @@ export const startChat = async (req, res) => {
     }
 
     const order = await OrderModel.findOne({ 'userDetails.phoneNumber': phone }).sort({ createdAt: -1 });
-    if (!order && !name) {
-      return res.status(400).json({
-        error: 'لم يتم العثور على طلب. الرجاء إدخال الاسم لمتابعة الدردشة.',
-        requiresName: true
-      });
-    }
 
     const customerName = (name && String(name).trim()) || order?.userDetails?.username || 'عميل';
 
