@@ -4,15 +4,16 @@ import accountingRouter from './accounting.js';
 import adminsRouter from './admins.js';
 import announcementsRouter from './announcements.js';
 import authRouter from './auth.js';
+import chatRouter from './chat.js';
+import heroRouter from './hero.js';
+import imageProxyRouter from './imageProxy.js';
 import ordersRouter from './orders.js';
 import productsRouter from './products.js';
 import promotionsRouter from './promotions.js';
 import reportsRouter from './reports.js';
 import revenueRouter from './revenue.js';
-import usersRouter from './users.js';
 import storeRouter from './store.js';
-import chatRouter from './chat.js';
-import heroRouter from './hero.js';
+import usersRouter from './users.js';
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ router.use('/accounting', accountingRouter);
 router.use('/store', storeRouter);
 router.use('/chat', chatRouter);
 router.use('/hero', heroRouter);
+router.use('/image-proxy', imageProxyRouter);
   
 
 export default router;

@@ -31,7 +31,41 @@ const requestPage = (url) => new Promise((resolve, reject) => {
 const resolveImageUrl = async (raw) => {
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
   if (!trimmed) return '';
+  // If it's already an i.bb direct image, return as-is
   if (/https?:\/\/i\.ibb\.co\//i.test(trimmed)) return trimmed;
+  // Convert common Google Drive share URLs to a direct image URL that can be used in <img src>
+  // Examples handled:
+  // - https://drive.google.com/file/d/FILEID/view?usp=sharing
+  // - https://drive.google.com/open?id=FILEID
+  // - https://drive.google.com/thumbnail?id=FILEID
+  // - https://drive.google.com/uc?id=FILEID
+  try {
+    const driveFileMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/file\/d\/([^\/\?]+)/i);
+    if (driveFileMatch && driveFileMatch[1]) {
+      return `https://drive.google.com/uc?export=view&id=${driveFileMatch[1]}`;
+    }
+    const openMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/open\?id=([^&]+)/i);
+    if (openMatch && openMatch[1]) {
+      return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+    }
+    const thumbMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/thumbnail\?id=([^&]+)/i);
+    if (thumbMatch && thumbMatch[1]) {
+      return `https://drive.google.com/uc?export=view&id=${thumbMatch[1]}`;
+    }
+    const ucMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/uc\?id=([^&]+)/i);
+    if (ucMatch && ucMatch[1]) {
+      // ensure export=view is present
+      return `https://drive.google.com/uc?export=view&id=${ucMatch[1]}`;
+    }
+    // match query-like fragments (id=FILEID or t=view&id=FILEID)
+    const fragMatch = trimmed.match(/(?:id=|[?&]id=)([A-Za-z0-9_-]{10,})/i);
+    if (fragMatch && fragMatch[1]) return `https://drive.google.com/uc?export=view&id=${fragMatch[1]}`;
+    // if user pasted only the file ID (common), detect plausible id length and build URL
+    const bareIdMatch = trimmed.match(/^([A-Za-z0-9_-]{20,})$/);
+    if (bareIdMatch && bareIdMatch[1]) return `https://drive.google.com/uc?export=view&id=${bareIdMatch[1]}`;
+  } catch (err) {
+    // fallthrough to other handlers
+  }
   if (/https?:\/\/(www\.)?ibb\.co\//i.test(trimmed)) {
     try {
       const html = await requestPage(trimmed);
@@ -77,7 +111,7 @@ const normalizeGalleryInput = (value) => {
   return [];
 };
 
-const enrichImagePayload = async (payload = {}) => {
+export const enrichImagePayload = async (payload = {}) => {
   const next = { ...payload };
   next.imageUrl = await resolveImageUrl(next.imageUrl);
   next.secondaryImageUrl = await resolveImageUrl(next.secondaryImageUrl);
@@ -115,6 +149,10 @@ const enrichImagePayload = async (payload = {}) => {
 export const createProduct = async (req, res) => {
   try {
     const prepared = await enrichImagePayload(req.body);
+    // Ensure required fields exist. If Name is missing, provide a safe placeholder to avoid validation errors.
+    if (!prepared.Name || String(prepared.Name).trim() === '') {
+      prepared.Name = `منتج - ${Date.now()}`;
+    }
     const product = new ProductModel(prepared);
     await product.save();
     res.status(201).json(attachStockStatus(product));
@@ -276,6 +314,10 @@ export const getProductById = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const prepared = await enrichImagePayload(req.body);
+    // If Name is being cleared or missing in update payload, ensure we don't violate schema.
+    if (!prepared.Name || String(prepared.Name).trim() === '') {
+      prepared.Name = `منتج - ${Date.now()}`;
+    }
     const product = await ProductModel.findByIdAndUpdate(req.params.id, prepared, { new: true });
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(attachStockStatus(product));

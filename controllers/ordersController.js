@@ -18,7 +18,21 @@ const isValidPhoneNumber = (value = '') => normalizePhone(value).length === PHON
 const normalizeImageValue = (value) => {
   if (!value || typeof value !== 'string') return '';
   const trimmed = value.trim();
-  return trimmed || '';
+  if (!trimmed) return '';
+  // Normalize common Google Drive share/view URLs to a direct image URL
+  try {
+    const driveFile = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/file\/d\/([^\/\?]+)/i);
+    if (driveFile && driveFile[1]) return `https://drive.google.com/uc?export=view&id=${driveFile[1]}`;
+    const openMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/open\?id=([^&]+)/i);
+    if (openMatch && openMatch[1]) return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+    const thumbMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/thumbnail\?id=([^&]+)/i);
+    if (thumbMatch && thumbMatch[1]) return `https://drive.google.com/uc?export=view&id=${thumbMatch[1]}`;
+    const ucMatch = trimmed.match(/https?:\/\/(?:www\.)?drive\.google\.com\/uc\?id=([^&]+)/i);
+    if (ucMatch && ucMatch[1]) return `https://drive.google.com/uc?export=view&id=${ucMatch[1]}`;
+  } catch (err) {
+    // ignore and fall back to raw value
+  }
+  return trimmed;
 };
 
 const toArray = (value) => {

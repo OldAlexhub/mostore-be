@@ -48,7 +48,13 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(helmet());
+app.use(helmet({
+    // Allow proxied images/files to be embedded in the admin/client apps (we handle allowlist in the proxy)
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+    contentSecurityPolicy: false,
+    frameguard: false
+}));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
